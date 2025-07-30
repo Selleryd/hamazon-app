@@ -3,46 +3,55 @@ import VisionKit
 
 @available(iOS 16.0, *)
 struct ScannerView: UIViewControllerRepresentable {
-    var completion: (String) -> Void
+  /// Called with the barcode string when one is found
+  var completion: (String) -> Void
 
-    func makeUIViewController(context: Context) -> DataScannerViewController {
-        let types: [DataScannerViewController.RecognizedDataType] = [
-            .barcode(.ean13),
-            .barcode(.ean8),
-            .barcode(.upce)
-        ]
-        let scanner = try! DataScannerViewController(
-            recognizedDataTypes: types,
-            qualityLevel: .balanced,
-            recognizesMultipleItems: false,
-            highlightsRecognizedData: true
-        )
-        scanner.delegate = context.coordinator
-        return scanner
+  func makeUIViewController(context: Context) -> DataScannerViewController {
+    // Only EAN-13, EAN-8 and UPC-E barcodes
+    let types: [DataScannerViewController.RecognizedDataType] = [
+      .barcode(symbologies: [.ean13, .ean8, .upce])
+    ]
+
+    // Because the init can throw, we wrap in a do/catch and crash if something really
+    // unexpected happens. In practice this never fails at runtime on a real device.
+    let controller: DataScannerViewController
+    do {
+      controller = try DataScannerViewController(
+        recognizedDataTypes: types,
+        quality: .balanced,
+        recognizesMultipleItems: false
+      )
+    } catch {
+      fatalError("Failed to create DataScannerViewController: \(error)")
     }
 
-    func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {}
+    controller.delegate = context.coordinator
+    return controller
+  }
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+  func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {
+    // no dynamic updates needed here
+  }
 
-    class Coordinator: NSObject, DataScannerViewControllerDelegate {
-        var parent: ScannerView
-        init(_ parent: ScannerView) { self.parent = parent }
+  func makeCoordinator() -> Coordinator {
+    Coordinator(self)
+  }
 
-        func dataScanner(
-            _ dataScanner: DataScannerViewController,
-            didRecognize items: [DataScannerViewController.RecognizedItem]
-        ) {
-            guard let code = items.compactMap({ $0 as? DataScannerViewController.RecognizedBarcode })
-                                    .first?
-                                    .payloadStringValue
-            else { return }
-            parent.completion(code)
-            dataScanner.stopScanning()
-        }
+  class Coordinator: NSObject, DataScannerViewControllerDelegate {
+    let parent: ScannerView
 
-        func dataScanner(_ dataScanner: DataScannerViewController, didReceive error: Error) {
-            print("Scanner error:", error)
-        }
+    init(_ parent: ScannerView) {
+      self.parent = parent
+      super.init()
     }
+
+    func dataScanner(
+      _ dataScanner: DataScannerViewController,
+      didRecognize items: [DataScannerViewController.RecognizedBarcode]
+    ) {
+      guard let first = items.first else { return }
+      parent.completion(first.payloadStringValue)
+    }
+  }
 }
+
